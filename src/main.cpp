@@ -120,81 +120,54 @@ Data data;
 
 unsigned lastChangedAt = 0;
 
+int StrToHex(char str[])
+{
+    return (int)strtol(str, 0, 16);
+}
+
 void loop()
 {
-    if (state == STATE::NONE)
-    {
-        state = STATE::GETTING_INTAKE_AIR_TEMP;
-    }
+    // const uint8_t INTAKE_AIR_TEMP = 15;    // 0x0F - °C
+    // const uint8_t ENGINE_COOLANT_TEMP = 5; // 0x05 - °C
+    // const uint8_t ENGINE_RPM = 12;         // 0x0C - rpm
+    // const uint8_t VEHICLE_SPEED = 13;      // 0x0D - km/h
 
-    if (state == STATE::GETTING_INTAKE_AIR_TEMP)
-    {
-        float val = myELM327.intakeAirTemp();
-        if (myELM327.nb_rx_state == ELM_SUCCESS)
-        {
-            data.intakeAirTemp = (uint32_t)val;
-            Serial.println("intakeAirTemp:" + String(data.intakeAirTemp) + ",");
-            state = STATE::GETTING_ENGINE_COOLANT_TEMP;
-        }
-        else if ((myELM327.nb_rx_state == ELM_NO_DATA))
-            val = myELM327.intakeAirTemp();
-        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-            myELM327.printError();
-    }
+    const char *const CMD = "01 0F 05 0C 0D";
 
-    if (state == STATE::GETTING_ENGINE_COOLANT_TEMP)
-    {
-        float val = myELM327.engineCoolantTemp();
-        if (myELM327.nb_rx_state == ELM_SUCCESS)
-        {
-            data.engineCoolantTemp = (uint32_t)val;
-            Serial.println("engineCoolantTemp:" + String(data.engineCoolantTemp) + ",");
-            state = STATE::GETTING_RPM;
-        }
-        else if ((myELM327.nb_rx_state == ELM_NO_DATA))
-            val = myELM327.engineCoolantTemp();
-        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-            myELM327.printError();
-    }
+    myELM327.sendCommand_Blocking(CMD);
+    String response = myELM327.payload;
+    // Response (ON: 01 0F 05 0C 0D): 00A0:410F5F057E0C1:0B120D00AAAAAA
+    //             IAT     COOL      RPM        KMH
+    // 00A0:410F   5F 05   7E 0C 1 : 0B 12 0D    00 AAAA AA
+    // IAT: 5F = 95 - 40 = 55C
+    // Coolant: 7E = 126 - 40 = 86C
+    // RPM: 0B = 11, 12 = 18 === ((11*256)+18)/4 = 708.5
+    // KMH:
+    // String response = "00A0:410F5F057E0C1:0B120D00AAAAAA";
+    Serial.print("response: ");
+    Serial.println(response);
 
-    if (state == STATE::GETTING_RPM)
-    {
-        float val = myELM327.rpm();
-        if (myELM327.nb_rx_state == ELM_SUCCESS)
-        {
-            data.rpm = (uint32_t)val;
-            Serial.println("RPM:" + String(data.rpm) + ",");
-            state = STATE::GETTING_MPH;
-        }
-        else if ((myELM327.nb_rx_state == ELM_NO_DATA))
-            val = myELM327.rpm();
-        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-            myELM327.printError();
-    }
+    Serial.print("IAT: ");
+    char hexIAT[3] = {response.charAt(9), response.charAt(10), '\0'};
+    data.intakeAirTemp = StrToHex(hexIAT) - 40;
+    Serial.println(data.intakeAirTemp);
 
-    if (state == STATE::GETTING_MPH)
-    {
-        float val = myELM327.mph();
-        if (myELM327.nb_rx_state == ELM_SUCCESS)
-        {
-            data.mph = (uint32_t)val;
-            Serial.println("mph:" + String(data.mph) + ",");
-            state = STATE::NONE;
-        }
-        else if ((myELM327.nb_rx_state == ELM_NO_DATA))
-            val = myELM327.mph();
-        else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-            myELM327.printError();
-    }
+    Serial.print("Coolant: ");
+    char hexEngineCoolantTemp[3] = {response.charAt(13), response.charAt(14), '\0'};
+    data.engineCoolantTemp = StrToHex(hexEngineCoolantTemp) - 40;
+    Serial.println(data.engineCoolantTemp);
 
-    // if (lastChangedAt == 0 || millis() - lastChangedAt > 5000)
-    // {
-    //     lastChangedAt = millis();
-    //     data.engineCoolantTemp = random(85, 120);
-    //     data.intakeAirTemp = random(45, 72);
-    //     data.rpm = random(830, 4550);
-    //     data.mph = random(0, 156);
-    // }
+    Serial.print("RPM: ");
+    char hexRPM_A[3] = {response.charAt(19), response.charAt(20), '\0'};
+    char hexRPM_B[3] = {response.charAt(21), response.charAt(22), '\0'};
+    data.rpm = ((StrToHex(hexRPM_A) * 256) + StrToHex(hexRPM_B)) / 4;
+    Serial.println(data.rpm);
+
+    Serial.print("Mp/h: ");
+    char hexKmh[3] = {response.charAt(25), response.charAt(26), '\0'};
+    data.mph = (double)StrToHex(hexKmh) / 1.609344;
+    Serial.println(data.mph);
+
 
     display.clearDisplay();
 
