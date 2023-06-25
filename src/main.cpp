@@ -67,6 +67,8 @@ void setup()
 {
     Serial.begin(115200);
 
+    Wire.begin(23, 19);
+
     if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
     {
         Serial.println(F("SSD1306 allocation failed"));
